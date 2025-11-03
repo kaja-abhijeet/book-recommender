@@ -10,7 +10,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 # Load environment variables (if any)
 load_dotenv()
 
-st.set_page_config(page_title="📚 Semantic Book Recommender", layout="wide")
+st.set_page_config(page_title="📚 Book Recommender", layout="wide")
 
 # ---------------------------------
 # Load Data
