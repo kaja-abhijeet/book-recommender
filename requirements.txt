@@ -4,8 +4,11 @@ numpy
 python-dotenv
 langchain
 langchain-community
+langchain-text-splitters
 langchain-chroma
 langchain-huggingface
 chromadb
-sentence-transformers
 huggingface-hub
+sentence-transformers
+transformers
+torch
