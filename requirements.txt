@@ -1,10 +1,11 @@
 streamlit
 pandas
 numpy
-chromadb
+python-dotenv
 langchain
+langchain-community
 langchain-chroma
 langchain-huggingface
-huggingface-hub
+chromadb
 sentence-transformers
-python-dotenv
+huggingface-hub
