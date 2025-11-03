@@ -9,3 +9,4 @@ langchain-text-splitters
 langchain-chroma
 huggingface-hub
 tiktoken
+langchain-huggingface
