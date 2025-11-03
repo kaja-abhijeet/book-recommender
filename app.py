@@ -2,62 +2,51 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from dotenv import load_dotenv
-
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import CharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
-
-# -----------------------------
-# 1. Load environment variables
-# -----------------------------
+# Load environment variables (if any)
 load_dotenv()
 
+st.set_page_config(page_title="📚 Semantic Book Recommender", layout="wide")
 
-# -----------------------------
-# 2. Load books dataset
-# -----------------------------
+# ---------------------------------
+# Load Data
+# ---------------------------------
 @st.cache_data
-def load_books():
-    books_df = pd.read_csv("books_with_emotions.csv")
-    books_df["large_thumbnail"] = books_df["thumbnail"] + "&fife=w800"
-    books_df["large_thumbnail"] = np.where(
-        books_df["large_thumbnail"].isna(),
+def load_data():
+    books = pd.read_csv("books_with_emotions.csv")
+    books["large_thumbnail"] = books["thumbnail"] + "&fife=w800"
+    books["large_thumbnail"] = np.where(
+        books["large_thumbnail"].isna(),
         "cover-not-found.jpg",
-        books_df["large_thumbnail"],
+        books["large_thumbnail"],
     )
-    return books_df
+    return books
 
+books = load_data()
 
-books = load_books()
-
-
-# -----------------------------
-# 3. Load and split text data
-# -----------------------------
+# ---------------------------------
+# Load and prepare documents
+# ---------------------------------
 @st.cache_resource
-def load_vector_db():
+def setup_embeddings():
     raw_documents = TextLoader("tagged_description.txt", encoding="utf-8").load()
     text_splitter = CharacterTextSplitter(separator="\n", chunk_size=500, chunk_overlap=0)
     documents = text_splitter.split_documents(raw_documents)
 
-    # Create HuggingFace embeddings
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
-    # Create Chroma vector store
-    db_books = Chroma.from_documents(documents, embedding=embeddings)
+    huggingface_embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    db_books = Chroma.from_documents(documents, embedding=huggingface_embeddings)
     return db_books
 
+db_books = setup_embeddings()
 
-db_books = load_vector_db()
-
-
-# -----------------------------
-# 4. Define semantic retriever
-# -----------------------------
-def retrieve_semantic_recommendations(query, category=None, tone=None,
-                                      initial_top_k=50, final_top_k=16):
+# ---------------------------------
+# Semantic Recommendation Logic
+# ---------------------------------
+def retrieve_semantic_recommendations(query, category=None, tone=None, initial_top_k=50, final_top_k=16):
     recs = db_books.similarity_search(query, k=initial_top_k)
     books_list = [int(rec.page_content.strip('"').split()[0]) for rec in recs]
     book_recs = books[books["isbn13"].isin(books_list)].head(initial_top_k)
@@ -67,80 +56,60 @@ def retrieve_semantic_recommendations(query, category=None, tone=None,
     else:
         book_recs = book_recs.head(final_top_k)
 
-    # Emotion-based sorting
-    tone_map = {
-        "Happy": "joy",
-        "Surprising": "surprise",
-        "Angry": "anger",
-        "Suspenseful": "fear",
-        "Sad": "sadness"
-    }
-    if tone in tone_map:
-        book_recs.sort_values(by=tone_map[tone], ascending=False, inplace=True)
+    if tone == "Happy":
+        book_recs = book_recs.sort_values(by="joy", ascending=False)
+    elif tone == "Surprising":
+        book_recs = book_recs.sort_values(by="surprise", ascending=False)
+    elif tone == "Angry":
+        book_recs = book_recs.sort_values(by="anger", ascending=False)
+    elif tone == "Suspenseful":
+        book_recs = book_recs.sort_values(by="fear", ascending=False)
+    elif tone == "Sad":
+        book_recs = book_recs.sort_values(by="sadness", ascending=False)
 
     return book_recs
 
-
-# -----------------------------
-# 5. Streamlit UI
-# -----------------------------
-st.set_page_config(page_title="Book Recommender", layout="wide")
-
-st.title("📚✨Book Recommender")
+# ---------------------------------
+# Streamlit UI
+# ---------------------------------
+st.title("📚✨ Book Recommender")
 st.markdown("""
 Find your next favorite read with **AI-powered recommendations**.  
 Search by *story idea*, *category*, or even the *emotion* you want to feel!
 """)
 
-query = st.text_area("🔍 Describe a book you'd like to read:",
-                     placeholder="e.g., A mystery novel set in Victorian London")
+st.divider()
 
-col1, col2 = st.columns(2)
-
-categories = ["All"] + sorted(books["simple_categories"].unique())
-tones = ["All", "Happy", "Surprising", "Angry", "Suspenseful", "Sad"]
+col1, col2, col3 = st.columns([3, 1.5, 1.5])
 
 with col1:
-    category = st.selectbox("📂 Choose a category:", categories)
+    query = st.text_area("🔍 Describe a book you’d like to read:", placeholder="e.g., A mystery novel set in Victorian London")
 
 with col2:
+    categories = ["All"] + sorted(books["simple_categories"].unique())
+    category = st.selectbox("📂 Choose a category:", categories)
+
+with col3:
+    tones = ["All", "Happy", "Surprising", "Angry", "Suspenseful", "Sad"]
     tone = st.selectbox("🎭 Choose an emotional tone:", tones)
 
-submit = st.button("🚀 Get Recommendations")
+st.divider()
 
-# -----------------------------
-# 6. Display recommendations
-# -----------------------------
-if submit and query:
-    with st.spinner("Finding great reads for you..."):
-        recommendations = retrieve_semantic_recommendations(query, category, tone)
+if st.button("🚀 Get Recommendations"):
+    if not query.strip():
+        st.warning("Please enter a description or story idea first.")
+    else:
+        st.write("### 📖 Recommended Books")
+        recs = retrieve_semantic_recommendations(query, category, tone)
 
-    st.subheader("📖 Recommended Books")
-
-    for _, row in recommendations.iterrows():
-        with st.container():
-            col_img, col_text = st.columns([1, 3])
-
-            with col_img:
-                st.image(row["large_thumbnail"], width=130)
-
-            with col_text:
-                authors_split = row["authors"].split(";")
-                if len(authors_split) == 2:
-                    authors_str = f"{authors_split[0]} and {authors_split[1]}"
-                elif len(authors_split) > 2:
-                    authors_str = f"{', '.join(authors_split[:-1])}, and {authors_split[-1]}"
-                else:
-                    authors_str = row["authors"]
-
-                description = row["description"]
-                truncated_desc_split = description.split()
-                truncated_description = " ".join(truncated_desc_split[:30]) + "..."
-
-                st.markdown(f"**{row['title']}** by *{authors_str}*")
-                st.write(truncated_description)
-                st.markdown("---")
-
-elif submit:
-    st.warning("Please enter a description or story idea first!")
-
+        if recs.empty:
+            st.info("No recommendations found. Try adjusting your query or filters.")
+        else:
+            cols = st.columns(4)
+            for i, (_, row) in enumerate(recs.iterrows()):
+                with cols[i % 4]:
+                    st.image(row["large_thumbnail"], use_container_width=True)
+                    st.markdown(f"**{row['title']}**")
+                    st.caption(row["authors"])
+                    desc = " ".join(row["description"].split()[:30]) + "..."
+                    st.write(desc)
